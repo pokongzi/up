@@ -1,0 +1,10 @@
+<view class="container">
+  <view class="hero">
+    <text class="greeting">欢迎来到 UP 小程序</text>
+    <text class="subtitle">快速查看状态，连接后台服务</text>
+  </view>
+  <button type="primary" bindtap="handleCheckStatus">查看后台连接</button>
+  <view class="status" wx:if="{{status}}">
+    <text>当前状态：{{status}}</text>
+  </view>
+</view>

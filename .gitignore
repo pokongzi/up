@@ -1,0 +1,28 @@
+# Logs and temp files
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Dependency directories
+node_modules/
+miniprogram_npm/
+
+# Build output
+/dist/
+/build/
+
+# IDE/editor artifacts
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Environment/config secrets
+.env
+*.local
+
+# Project-specific config files
+backend/config/*.ini
+frontend/project.config.json
