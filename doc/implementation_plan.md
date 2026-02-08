@@ -29,35 +29,70 @@
 
 ### 核心表结构
 
-1. **provinces** - 省份表
-   - id, name, code, sort_order
+1. **areas** - 区域表（树形：父节点=省份，子节点=地区）
+   - id (PK, 自增)
+   - parent_id (0 或 NULL 表示根节点/省份；非空表示父区域 id，即地区归属的省份)
+   - name - 名称
+   - code (可空) - 编码
+   - sort_order (可空) - 同级排序
+   - 索引：idx_areas_parent_id(parent_id)，便于按父节点查子节点
 
-2. **regions** - 地区表  
-   - id, province_id, name, code
-
-3. **exam_questions** - 题目表
+2. **questions** - 题目表
    - id, province_id, region_id, year, exam_type, question_text, question_image_url, created_at, updated_at
+   - province_id、region_id 均关联 areas.id（省份=根节点，地区=子节点）
 
-4. **answer_sources** - 答案机构表
-   - id, name (华图/粉笔/中公), code, sort_order
+3. **question_answers** - 题目答案表
+   - id, question_id, source, answer_text, answer_image_url, created_at, updated_at
+   - source：答案机构，使用枚举（华图 huatu / 粉笔 fenbi / 中公 zhonggong），存 code 或整型均可
 
-5. **question_answers** - 题目答案表
-   - id, question_id, source_id, answer_text, answer_image_url, created_at, updated_at
+4. **users** - 用户表
+   - id (bigint, PK, 自增) - 用户ID
+   - open_id (varchar 64, NOT NULL) - 平台用户ID(微信OpenID或支付宝UserID)
+   - nickname (varchar 64, NOT NULL) - 用户昵称
+   - avatar_url (varchar 255, 可空) - 头像URL
+   - platform (varchar 16, 默认 wechat) - 登录平台(wechat, alipay)
+   - status (int, 默认 1) - 用户状态(1:正常 0:禁用)
+   - token_version (int, 默认 1) - token版本号
+   - last_login_at (datetime(3), 可空) - 最后登录时间
+   - last_login_ip (varchar 45, 可空) - 最后登录IP
+   - login_count (int, 默认 0) - 登录次数
+   - created_at, updated_at (datetime(3))
+   - 索引：UNIQUE(platform, open_id), idx_users_created_at, idx_users_status_version
 
-6. **users** - 用户表（复用JWT认证）
-   - id, open_id, platform, nickname, created_at
+5. **refresh_tokens** - 刷新Token表
+   - id (bigint, PK, 自增) - Token ID
+   - user_id (bigint, NOT NULL, FK→users.id ON DELETE CASCADE) - 用户ID
+   - token (varchar 255, NOT NULL, UNIQUE) - 刷新token
+   - expires_at (datetime(3), NOT NULL) - 过期时间
+   - is_revoked (tinyint(1), 默认 0) - 是否已撤销
+   - user_agent (varchar 500, 可空) - 用户代理
+   - client_ip (varchar 45, 可空) - 客户端IP
+   - created_at, updated_at (datetime(3))
+   - 索引：UNIQUE(token), idx_refresh_tokens_user_id, idx_refresh_tokens_expires_at, idx_refresh_tokens_user_expires(user_id, expires_at DESC, is_revoked)
+
+6. **login_logs** - 登录日志表
+   - id (bigint, PK, 自增) - 日志ID
+   - user_id (bigint, NOT NULL, FK→users.id ON DELETE CASCADE) - 用户ID
+   - login_type (varchar 32, NOT NULL) - 登录类型(wechat, refresh)
+   - client_ip (varchar 45, NOT NULL) - 客户端IP
+   - user_agent (varchar 500, 可空) - 用户代理
+   - status (int, NOT NULL) - 登录状态(1:成功 0:失败)
+   - error_msg (varchar 255, 可空) - 错误信息
+   - login_at (datetime(3), NOT NULL) - 登录时间
+   - created_at (datetime(3))
+   - 索引：idx_login_logs_user_id, idx_login_logs_login_at, idx_login_logs_user_time(user_id, login_at DESC)
 
 ## 后端实现
 
 ### 1. 数据库模型层 (`backend/models/`)
 
 创建GORM模型文件：
-- `province.go` - 省份模型
-- `region.go` - 地区模型  
-- `exam_question.go` - 题目模型
-- `answer_source.go` - 答案机构模型
-- `question_answer.go` - 答案模型
-- `user.go` - 用户模型（如需要扩展）
+- `area.go` - 区域模型（树形：父节点=省份，子节点=地区）
+- `question.go` - 题目模型
+- `question_answer.go` - 答案模型（source 使用枚举：华图/粉笔/中公）
+- `user.go` - 用户模型（含 open_id、昵称、头像、平台、状态、token_version、登录信息等）
+- `refresh_token.go` - 刷新Token模型
+- `login_log.go` - 登录日志模型
 
 ### 2. API路由层 (`backend/routes/`)
 
@@ -123,18 +158,19 @@
 
 ### 1. 页面结构 (`front/minigram/pages/`)
 
-- **search/** - 题目搜索页
-  - `index.js/wxml/wxss` - 省份/年份/地区三级筛选
-  - 题目列表展示
+**底部导航（tabBar）**：共三项 —— **题目** | **扫码**（中间） | **我的**；默认展示「题目」页。
 
-- **scan/** - 扫码识别页
-  - `index.js/wxml/wxss` - 相机调用、图片上传、OCR识别
+| 菜单项 | 页面路径 | 说明 |
+|--------|----------|------|
+| 题目 | `questions/index` | 默认首页。省份/年份/地区三级筛选 + 题目列表；点击条目进入题目详情 |
+| 扫码 | `scan/index` | 中间按钮。相机调用、图片上传、OCR 识别，识别后可跳转题目列表或详情 |
+| 我的 | `mine/index` | 个人中心。未登录展示微信授权登录入口；已登录展示昵称、头像等 |
+
+**非 tabBar 子页**：
 
 - **detail/** - 题目详情页
   - `index.js/wxml/wxss` - 题目内容、多机构答案对比展示
-
-- **login/** - 登录页
-  - `index.js/wxml/wxss` - 微信授权登录
+  - 从「题目」列表点击进入，不在底部菜单
 
 ### 2. 工具类 (`front/minigram/utils/`)
 
@@ -144,7 +180,7 @@
 
 ### 3. 配置文件
 
-- `app.json` - 添加新页面路由配置
+- `app.json` - 页面路由 + **tabBar** 配置（题目、扫码、我的；扫码居中；默认项为题目）
 - 添加全局样式和主题配置
 
 ## 核心功能实现要点
